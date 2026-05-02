@@ -52,9 +52,8 @@
     '[class*="member"][class*="name"]',
     '[class*="author"][class*="name"]',
     '[class*="person"][class*="name"]',
-    // Structured data attributes
-    '[itemprop="name"]',
-    '[data-name]',
+    // Structured data — only when the element is inside a profile-like container
+    // (bare [itemprop="name"] and [data-name] are too broad — removed)
     // Common academic page structures  
     ".views-field-title .field-content",
     ".faculty-listing .name",
@@ -86,13 +85,25 @@
    *  - Hyphenated and apostrophed surnames (O'Brien, Levy-Smith)
    *  - Middle initials (J.)
    */
-  const NAME_REGEX =
-    /^(?:(?:Dr|Prof|Mr|Mrs|Ms|Sri|Smt|Shri)\.?\s+)?(?:[A-Z\u00C0-\u024F][a-z\u00C0-\u024F]{1,20}(?:['-][A-Z\u00C0-\u024F]?[a-z\u00C0-\u024F]+)?\.?\s*){1,5}$/;
+  // Requires 2–5 words, each starting with a capital letter.
+  // Supports full words (Singh, Kumar) AND single-letter initials (A., K., S.).
+  // The first word may optionally be a title prefix (Dr., Prof., etc.).
+  //
+  // Each name-part matches either:
+  //   • A full word:  Capital + 1–20 lowercase chars  (optionally hyphenated/apostrophed)
+  //   • An initial:   Single capital letter, optionally followed by a period
+  const NAME_PART = String.raw`(?:[A-Z\u00C0-\u024F](?:[a-z\u00C0-\u024F]{1,20}(?:['\-][A-Z\u00C0-\u024F]?[a-z\u00C0-\u024F]+)?|\.))`;
+  const NAME_REGEX = new RegExp(
+    String.raw`^(?:(?:Dr|Prof|Mr|Mrs|Ms|Sri|Smt|Shri)\.?\s+)?` +
+    NAME_PART +
+    String.raw`(?:\.?\s+` + NAME_PART + String.raw`\.?){1,4}$`
+  );
 
   /**
    * Words that disqualify a string from being a name.
    */
   const STOP_WORDS = new Set([
+    // Institution / structural words
     "department", "university", "college", "institute", "school",
     "faculty", "professor", "contact", "email", "phone", "address",
     "page", "home", "about", "research", "publication", "publications",
@@ -102,6 +113,19 @@
     "copyright", "privacy", "terms", "sitemap", "navigation", "skip",
     "submit", "download", "upload", "view", "read", "more", "click",
     "loading", "error", "undefined", "null",
+    // Common generic English verbs / words that look capitalised in headings
+    "learn", "explore", "discover", "connect", "follow", "share",
+    "join", "start", "get", "find", "open", "close", "save", "send",
+    "edit", "delete", "update", "create", "add", "remove", "show",
+    "hide", "next", "previous", "back", "continue", "cancel", "done",
+    "apply", "reset", "filter", "sort", "list", "table", "grid",
+    "all", "see", "visit", "watch", "play", "stop", "help", "support",
+    "buy", "shop", "order", "checkout", "details", "info", "information",
+    "overview", "summary", "introduction", "description", "title",
+    "heading", "header", "footer", "sidebar", "banner", "image", "video",
+    "link", "button", "form", "input", "select", "option", "label",
+    "category", "tag", "type", "status", "date", "time", "year",
+    "month", "day", "hour", "minute", "second", "total", "count",
   ]);
 
   /**
@@ -118,10 +142,11 @@
     // Must pass the regex
     if (!NAME_REGEX.test(trimmed)) return false;
 
-    // Reject if it contains a stop word
+    // Reject if any whole word in the text is a stop word
     const lower = trimmed.toLowerCase();
     for (const word of STOP_WORDS) {
-      if (lower.includes(word)) return false;
+      // Use word-boundary check: the stop word must appear as a standalone token
+      if (new RegExp(`(?:^|\\s)${word}(?:\\s|$)`).test(lower)) return false;
     }
 
     // Must have at least 2 "words" (first + last name)
@@ -294,12 +319,15 @@
       if (h.hasAttribute(PROCESSED_ATTR)) continue;
 
       // Only process if it's inside a container that looks profile-like
+      // Only containers that are strongly indicative of a people/profile listing.
+      // Removed overly broad ones like [class*="contact"], [class*="user"] that
+      // appear on generic pages and cause false positives.
       const parent = h.closest(
         '[class*="faculty"], [id*="faculty"], [class*="profile"], [id*="profile"], [class*="people"], [id*="people"], ' +
         '[class*="staff"], [id*="staff"], [class*="team"], [id*="team"], [class*="member"], [id*="member"], ' +
-        '[class*="directory"], [id*="directory"], [class*="card"], [id*="card"], [class*="person"], [id*="person"], ' +
+        '[class*="directory"], [id*="directory"], [class*="person"], [id*="person"], ' +
         '[class*="author"], [id*="author"], [class*="researcher"], [id*="researcher"], [class*="professor"], [id*="professor"], ' +
-        '[class*="user"], [id*="user"], [class*="contact"], [id*="contact"], [class*="instructor"], [id*="instructor"], [class*="speaker"], [id*="speaker"]'
+        '[class*="instructor"], [id*="instructor"], [class*="speaker"], [id*="speaker"], [class*="presenter"], [id*="presenter"]'
       );
       if (parent) {
         // Prevent false positives on repositories, articles, or products
@@ -352,7 +380,17 @@
 
   // ── Initialization ─────────────────────────────────────────────────────
 
+  function isExcludedSite() {
+    // EXCLUDED_HOSTS is defined in excluded-sites.js (loaded before this script).
+    const hosts = (typeof EXCLUDED_HOSTS !== "undefined") ? EXCLUDED_HOSTS : [];
+    const host = location.hostname.replace(/^www\./, "");
+    return hosts.some((excluded) => host === excluded || host.endsWith("." + excluded));
+  }
+
   function init() {
+    // Do not run on excluded sites
+    if (isExcludedSite()) return;
+
     // Initial scan
     scanForNames();
 
