@@ -18,7 +18,33 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["excluded-sites.js", "content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Profile Finder",
+  "description": "Detects names on academic and profile pages and adds quick LinkedIn search buttons.",
+  "version": "1.0.0",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["excluded-sites.js", "content.js"],
       "css": ["styles.css"],
       "run_at": "document_idle"
     }
